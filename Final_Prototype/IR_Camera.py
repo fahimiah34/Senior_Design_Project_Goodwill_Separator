@@ -5,14 +5,14 @@ import board
 import busio
 import adafruit_mlx90640
 import numpy as np
-from ultrasonic_final import UltrasonicSensor  #Used for the ul
+from Ultrasonic_Sensor import UltrasonicSensor  #Used for the ul
 
 class ThermalCamera:
     # Define class attributes for the fixed resolution of MLX90640
     WIDTH = 32
     HEIGHT = 24
     CALIBRATION_DURATION = 6                  # Duration in seconds for the calibration period
-    THRESHOLD = 0.5                           # Temperature threshold for detecting metal
+    THRESHOLD = 100                           # Temperature threshold for detecting metal. 0.5 is good
     MIN_POINTS = 12                           # Minimum number of points that have to be above threshold for metal detection to trigger
     BINARY_ARRAY = np.zeros((HEIGHT, WIDTH))  # Initialize the array of zeroes that will track where metal is detected
 
@@ -90,7 +90,7 @@ class ThermalCamera:
             self.calibration_matrix = np.round(self.calibration_matrix, decimals=1) # ROUNDING HAPPENS HERE
             print(self.calibration_matrix)
             print("Calibration completed.")
-            time.sleep(2)
+            time.sleep(1)
         else:
             print("Calibration failed: no frames captured.")
 
@@ -98,16 +98,16 @@ class ThermalCamera:
         """Detect if any sensor reads a temperature above the baseline plus threshold."""
         await self.read_frame() # update the frame matrix with the newest sample
         differences_from_baseline = np.subtract(self.frame_matrix, self.calibration_matrix)
-        await self.display_frame(differences_from_baseline, 1)  # this line prints out the actual difference from baseline array
+        #await self.display_frame(differences_from_baseline, 1)  # this line prints out the actual difference from baseline array
 
         # If any values are above the threshold:
         if differences_from_baseline is not None:
             binary_array = (differences_from_baseline > self.THRESHOLD).astype(int) # make a binary array to visualize where metal is detected
             count = np.sum(binary_array)            # Count the total points where metal is detected
-            print(f"TOTAL POINTS ABOTE THRESHOLD: {count}")
+            #print(f"TOTAL POINTS ABOTE THRESHOLD: {count}")
             
             if count >= self.MIN_POINTS:
-                await self.display_frame(binary_array, 0)        # Print the differences from baseline to show where metal is detected
+                #await self.display_frame(binary_array, 0)        # Print the differences from baseline to show where metal is detected
                 return True
         
         #print(binary_array)
@@ -119,17 +119,27 @@ class ThermalCamera:
         while True:
             # wait to sense until the IR camera is in the middle of the partition
             if ultrasonic_sensor.motor_speed_rpm_avg is not None: #Using the simple discrete motor speed for now, but can change to average
-                expected_position = (time.monotonic() - ultrasonic_sensor.last_partition_time)* 60 * (1/6) * ultrasonic_sensor.motor_speed_rpm
                 
-                time_to_wait = ultrasonic_sensor.last_partition_time
+                diff = time.monotonic() - ultrasonic_sensor.last_partition_time
 
+                # Checks whether the motor has gotten to half the partition. If not, it waits until it's in the middle to record. 
+                if diff < (ultrasonic_sensor.time_between_partitions *0.5):
+                    # get time in seconds from ultrasonic motor speed in RPM -- 1 RPM = 1/60 RPS = 1/10 partitions per second 
+                    time_to_wait = ((ultrasonic_sensor.time_between_partitions * 0.5) - diff) * (ultrasonic_sensor.motor_speed_rpm * (1/10))
+                    await asyncio.sleep(time_to_wait)
 
-                if await self.detect_object():
-                    print("Object detected!")
-                    motor_event.set()  # Trigger motor event
+                    if await self.detect_object():
+                        print("Object detected!")
+                        motor_event.set()  # Trigger motor event
+                    else:
+                        pass
 
+                # If it's past, it waits until the middle of the next partition
                 else:
-                    #await self.display_frame()
                     pass
-
+                    
             await asyncio.sleep(0.1)  # Sleep to avoid busy-waiting
+
+
+            # Still need to fix: timing between this function and the detect_object() function might not line up. Think of a way to add, or scrap
+            # If scrap, use the monitor() function from Prototype_2.1

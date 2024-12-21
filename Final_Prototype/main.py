@@ -1,80 +1,75 @@
-# FINAL MAIN FILE
 import asyncio
 from Proximity_Sensor import ProximitySensor
 from IR_Sensor import IRSensorArray
 from IR_Camera import ThermalCamera
-from Ultrasonic_Sensor import UltrasonicSensor
-from Motor import TrapDoorMotor
+from motor_test import TrapDoorMotor
 
-# debugging
-import board
-import busio
-
-async def monitor_proximity(sensor, motor_event):
-    """Monitor proximity sensor asynchronously."""
-    while True:
-        if await sensor.is_object_detected():
-            print('Object detected!')
-            motor_event.set()  # Trigger motor event
-        await asyncio.sleep(0.1)  # Add a sleep time to avoid rapid polling
-
-async def monitor_ir_sensors(ir_sensor_array, motor_event):       # Temporarily commented out
+async def monitor_ir_sensors(ir_sensor_array, queue):
     """Monitor IR sensor array asynchronously."""
     while True:
         if await ir_sensor_array.detect_object():
-            print("Detected metal!")
-            motor_event.set()  # Trigger motor event
-        await asyncio.sleep(0.5)  # Add a sleep time to avoid rapid polling
-        print("the IR SENSOR async wait just happened")
+            print("Detected metal! (IR Sensors)")
+            await queue.put("metal_detected")
+        await asyncio.sleep(0.3)
 
-async def monitor_ir_camera(ir_camera_array, motor_event):
-    """Monitor IR camera array asynchronously"""
+async def monitor_ir_camera(ir_camera_array, queue):
+    """Monitor IR camera array asynchronously."""
     while True:
         if await ir_camera_array.detect_object():
-            print("Detected metal!")
-            motor_event.set() # Trigger motor event
-        await asyncio.sleep(0.5) # sleep time to avoid rapid polling
-        print("IR CAM async wait just happened")
+            print("Detected metal! (IR Cameras)")
+            await queue.put("metal_detected")
+        await asyncio.sleep(1)
 
-async def motor_control(motor_event):
-    """Control the motor to open and close the trap door."""
-    trap_door_motor = TrapDoorMotor(forward_pin=21, backward_pin=20)  # Initialize motor once
-
+async def monitor_proximity(sensor, queue):
+    """Monitor proximity sensor asynchronously."""
     while True:
-        await motor_event.wait()  # Wait for the event to be set
-        await trap_door_motor.run()  # Run motor control asynchronously
-        motor_event.clear()  # Reset the event
+        if await sensor.is_object_detected():
+            print("Detected object!")
+            await queue.put("metal_detected")
+        await asyncio.sleep(0.1)
+
+async def motor_control(queue):
+    """Control the motor to open and close the trap door."""
+    trap_door_motor = TrapDoorMotor(forward_pin=21, backward_pin=20)
+    while True:
+        event = await queue.get()  # Wait for detection event
+        if event == "metal_detected":
+            print("Opening trap door...")
+            await trap_door_motor.run()
+            
+            while not queue.empty():
+                await queue.get()
+        await asyncio.sleep(0.1)
 
 async def main():
     """Main async entry point for running the program."""
-    motor_event = asyncio.Event()
+    # Create detection queue
+    detection_queue = asyncio.Queue()
 
     # Initialize sensors
-    prox_sensors = [
-        ProximitySensor(pin) for pin in [14, 15, 18, 23, 24, 25, 8, 7, 1, 12, 16]
-    ]
-    ir_sensor_array = IRSensorArray()       #Bring in IR sensor class
-    ir_camera_array = ThermalCamera()       #Bring in IR camera 
-    ultrasonic_sensor = UltrasonicSensor()  #Bring in Ultrasonic class
+    prox_sensors = [ProximitySensor(pin) for pin in [14, 15, 18, 23, 24, 25, 8, 7, 1, 12, 16]]
+    ir_sensor_array = IRSensorArray()
+    ir_camera_array = ThermalCamera()
 
-
-    # Create tasks for monitoring sensors
+    # Create tasks for monitoring sensors and controlling the motor
     tasks = [
-        *[monitor_proximity(sensor, motor_event) for sensor in prox_sensors],
-        monitor_ir_sensors(ir_sensor_array, motor_event),
-        monitor_ir_camera(ir_camera_array, motor_event), 
-        motor_control(motor_event) 
+        *[monitor_proximity(sensor, detection_queue) for sensor in prox_sensors],
+        monitor_ir_sensors(ir_sensor_array, detection_queue),
+        monitor_ir_camera(ir_camera_array, detection_queue),
+        motor_control(detection_queue),
     ]
-    # Monitor each proximity sensor
-    # Monitor IR sensors asynchronously
-    # Monitor IR camera asynchronously
-    # Handle motor control asynchronously
 
-    # Run all tasks concurrently
-    await asyncio.gather(*tasks)
-
-if __name__ == '__main__':
     try:
-        asyncio.run(main())  # Run the main async function
+        print("Starting tasks...")
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        print("Shutting down...")
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nCode stopped")
+        print("\nProgram terminated by user.")

@@ -3,15 +3,16 @@ from gpiozero import DistanceSensor
 import time
 import asyncio
 
+
 # Parameters
-PARTITION_DISTANCE = 0.06               #Distance from sensor to partition
-TOLERANCE = 0.04                        #Acceptable deviation from partition distance for detection
-SPEED_TIMING_ACCURACY_THRESHOLD = 0.01  #Wait time used when finding motor speed, in seconds. CANNOT BE ZERO.
+PARTITION_DISTANCE = 0.06              #Distance from sensor to partition
+TOLERANCE = 0.04                       #Acceptable deviation from partition distance for detection
+SPEED_TIMING_ACCURACY_THRESHOLD = 0.05  #Wait time used when finding motor speed, in seconds. CANNOT BE ZERO.
 SAMPLES = 5                             #Number of samples used to find moving average of rotational speed
 HISTORY_LENGTH = 15                     #Number of total speed entries to store for tracking moving average. Must be greater than SAMPLES
 
 class UltrasonicSensor:
-    def __init__(self, echo_pin, trigger_pin, sleep_time=0.25):
+    def __init__(self, echo_pin, trigger_pin, sleep_time=0.05):
         """Initializes the ultrasonic sensor with the specified echo and trigger pins."""
         self.sensor = DistanceSensor(echo=echo_pin, trigger=trigger_pin)
         self.sleep_time = sleep_time
@@ -29,31 +30,39 @@ class UltrasonicSensor:
 
     async def get_distance(self):
         """Returns the current distance measured by the sensor in meters."""
-        return await self.sensor.distance
+        return self.sensor.distance
 
     async def continuously_measure_distance(self):
         """Continuously measures and prints the distance."""
         try:
             while True:
-                await distance = self.get_distance()
-                print(f"Distance: {self.distance:.4f} m")
+                self.distance = await self.get_distance()
+                #print(f"Distance: {self.distance:.4f} m")
                 await asyncio.sleep(self.sleep_time)
         except KeyboardInterrupt:
             print("Measurement stopped by user.")
 
     async def check_for_partition(self):
         """ Asynchronously checks whether there is a partition in front of the sensor """
-        if await (self.sensor.distance <= round((PARTITION_DISTANCE + TOLERANCE), 2)):
-            return await True 
-        
+        while True:
+            current_distance = self.sensor.distance
+            if (self.sensor.distance <= round((PARTITION_DISTANCE + TOLERANCE), 2)):
+                #print("PARTITION FOUND")
+                return True 
+            await asyncio.sleep(0.01)
+            return False
+   
     async def track_partition_state(self):
         """ Function to track changes in partition state--i.e. when a partition passes"""
         while True:
-            if await self.check_for_partition():
+            #print(self.count)
+            #await self.continuously_measure_distance()
+            await asyncio.sleep(0.01)                                                                               #JUST ADDED 7:36 pm
+            if await self.check_for_partition() == True:
                 if self.state == 0:
-                    self.state = 1 # keep at 1 for partition until detected clear
                     self.count += 1
-
+                    self.state = 1 # keep at 1 for partition until detected clear
+                
                     # For the motor speed function--this will leave us with two objects, one tracking the most recent partition pass, and one 
                     # tracking the partition pass right beore that
                     if self.last_partition_time != None:
@@ -63,18 +72,18 @@ class UltrasonicSensor:
                     if self.before_last_partition_time != None: # Once we have two values, we can track the time between them!
                         self.time_between_partitions = self.last_partition_time - self.before_last_partition_time
                     print("Partition!")
-                else:
-                    print("Partition still there")
-            else: 
+                #else:
+                    #print("Partition still there")
+            else:
                 if self.state == 1:
                     self.state = 0 # Once partition detected clear, switch back to "not-detected" state
                     print("Partition cleared")
-                    print("Moving")
-                else:
-                    print("Moving")
+                    #print("Moving")
+                #else:
+                    #print("Moving")
 
     async def get_time_since_last_partition(self):
-        """returns the time since the last partition"""
+        #"""returns the time since the last partition"""
         if self.last_partition_time is None:
             return None   # No partition has been detected yet
         return time.monotonic() - self.last_partition_time

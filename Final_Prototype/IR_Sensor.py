@@ -54,7 +54,7 @@ To address problem 2:
     0.4 works for initialization over an empty bay
     0.8 appears to work for initialization over PVC either on top of the bay or on the table"""
 # SETTING THRESHOLD
-THRESHOLD = 0.8
+THRESHOLD = 0.8  #0.8 works best
 
 class IRSensorArray:
     def __init__(self):
@@ -131,7 +131,7 @@ class IRSensorArray:
 
             # for debugging and testing the effect of metal vs pure glass:
             difference_from_baseline = round(current_temp - baseline, 2)
-            print(f"difference from baseline: {difference_from_baseline}")
+            #print(f"difference from baseline: {difference_from_baseline}")
 
             if current_temp >= baseline + THRESHOLD:
                 print(f"TEMPERATURE DIFFERENCE: {(current_temp - baseline), 2}")

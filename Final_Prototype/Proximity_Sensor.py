@@ -6,6 +6,7 @@ class ProximitySensor:
     def __init__(self, sensor_pin):
         """Initializes the proximity sensor with the given GPIO pin."""
         self.sensor = InputDevice(sensor_pin, pull_up=False)
+        self.metaldetect = 0 # initialize a variable to count the number of metal detections from the prox
 
     async def is_object_detected(self):
         """Check if an object is detected asynchronously."""
